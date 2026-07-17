@@ -2,7 +2,7 @@
   <div id="app">
     
     <nav class="navbar navbar-expand-lg fixed-top">
-      <router-link to="/" class="navbar-brand">WordPress API explorer</router-link>
+      <router-link :to="{ name: 'Home', query: $route.query.host ? { host: $route.query.host } : {} }" class="navbar-brand">WordPress API explorer</router-link>
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">👋 Menu</button>
 
       <div class="collapse navbar-collapse" id="navbarSupportedContent">

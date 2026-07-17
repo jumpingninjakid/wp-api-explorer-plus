@@ -572,9 +572,22 @@ export default {
 		},
 		getRouteQuery(tab = '') {
 			const query = {}
+			let host = this.routeHost
 
-			if (this.routeHost) {
-				query.host = this.routeHost
+			if (!host && this.q) {
+				try {
+					let inputUrl = this.q.trim()
+					if (inputUrl && !inputUrl.startsWith('http://') && !inputUrl.startsWith('https://')) {
+						inputUrl = `https://${inputUrl}`
+					}
+					host = inputUrl ? new URL(inputUrl).host : ''
+				} catch (error) {
+					host = ''
+				}
+			}
+
+			if (host) {
+				query.host = host
 			}
 
 			if (tab) {
