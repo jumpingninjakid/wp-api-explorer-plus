@@ -12,6 +12,9 @@
 							<input type="checkbox" class="custom-control-input" id="api-use-proxy" v-model="useProxy">
 							<label class="custom-control-label" for="api-use-proxy">Use proxy</label>
 						</div>
+						<button type="button" class="btn btn-sm btn-outline-secondary mt-2" @click="openManualFallback">
+							Manual JSON fallback
+						</button>
 					</div>
 				</div>
 			</div>
@@ -26,26 +29,38 @@
 					⚠️ Oops, probably this is not a WordPress site. ({{ this.site.error }})
 				</div>
 			</div>
+			<div v-if="manualRequest" class="alert alert-warning">
+				<p class="mb-2"><strong>Request blocked by CORS.</strong> Open the request in a new tab, copy the JSON response, and paste it below.</p>
+				<p class="mb-2">
+					<a :href="manualRequest.url" target="_blank" rel="noopener noreferrer">Open API request in new tab ↗</a>
+				</p>
+				<textarea v-model="manualResponseText" class="form-control" rows="8" placeholder='Paste raw JSON (or {"data": ..., "headers": ...})'></textarea>
+				<small v-if="manualResponseError" class="d-block mt-2 text-danger">{{ manualResponseError }}</small>
+				<div class="mt-2">
+					<button type="button" class="btn btn-sm btn-primary mr-2" @click="submitManualResponse">Use pasted response</button>
+					<button type="button" class="btn btn-sm btn-outline-secondary" @click="cancelManualResponse">Cancel</button>
+				</div>
+			</div>
 			<div v-if="state === 'idle'">
 
 				<ul class="nav nav-tabs mb-3">
 					<li class="nav-item">
-						<router-link :to="`/${$route.params.host}`" class="nav-link" :class="{active: !$route.params.tab}">Overview</router-link>
+						<router-link :to="{ name: 'Home', query: getRouteQuery() }" class="nav-link" :class="{active: !routeTab}">Overview</router-link>
 					</li>
 					<!--
 					<li class="nav-item">
-						<router-link :to="`/${$route.params.host}/taxonomies`" class="nav-link" :class="{active: $route.params.tab === 'taxonomies'}">Taxonomies</router-link>
+						<router-link :to="{ name: 'Home', query: getRouteQuery('taxonomies') }" class="nav-link" :class="{active: routeTab === 'taxonomies'}">Taxonomies</router-link>
 					</li>
 					-->
 					<li v-for="type in site.types" :key="type.slug" class="nav-item">
-						<router-link :to="`/${$route.params.host}/${type.slug}`" class="nav-link" :class="{active: $route.params.tab === type.slug}">{{ type.name }} <span v-if="type.totalTotal" class="badge badge-light-secondary badge-pill">{{ type.totalTotal }}</span></router-link>
+						<router-link :to="{ name: 'Home', query: getRouteQuery(type.slug) }" class="nav-link" :class="{active: routeTab === type.slug}">{{ type.name }} <span v-if="type.totalTotal" class="badge badge-light-secondary badge-pill">{{ type.totalTotal }}</span></router-link>
 					</li>
 				</ul>
 
-				<div v-if="$route.params.tab === 'taxonomies'">
+				<div v-if="routeTab === 'taxonomies'">
 					<pre>{{ site.taxonomies }}</pre>
 				</div>
-				<div v-else-if="$route.params.tab === 'attachment' && site.types.attachment">
+				<div v-else-if="routeTab === 'attachment' && site.types.attachment">
 					
 					<div class="form-row mb-3">
 						<div class="col-4 col-lg-3">
@@ -109,39 +124,39 @@
 						</div>
 					</div>
 
-					<div v-if="site.types[$route.params.tab].state === 'idle' && !site.types[$route.params.tab].items.length" class="alert alert-info text-center">
+					<div v-if="activeType.state === 'idle' && !activeType.items.length" class="alert alert-info text-center">
 						<strong>Oops,</strong> looks there aren't any items to display. Try changing the filters
 					</div>
 
-					<div v-if="site.types[$route.params.tab].error" class="alert alert-danger">
-						{{ site.types[$route.params.tab].error }}
+					<div v-if="activeType.error" class="alert alert-danger">
+						{{ activeType.error }}
 					</div>
 
-					<div v-if="site.types[$route.params.tab].state === 'loading'" class="text-center py-3">
+					<div v-if="activeType.state === 'loading'" class="text-center py-3">
 						<div class="spinner-border spinner-border-sm" role="status"></div> Loading media files
 					</div>
 
-					<div v-if="site.types[$route.params.tab].totalPages && site.types[$route.params.tab].state !== 'loading'" class="bg-white rounded p-2 my-3">
+					<div v-if="activeType.totalPages && activeType.state !== 'loading'" class="bg-white rounded p-2 my-3">
 						<div class="row align-items-center">
 							<div class="col">
-								<strong>{{ site.types[$route.params.tab].total }}</strong> items over <strong>{{ site.types[$route.params.tab].totalPages }}</strong> pages
+								<strong>{{ activeType.total }}</strong> items over <strong>{{ activeType.totalPages }}</strong> pages
 							</div>
 							<div class="col-auto">
 								<ul class="pagination pagination-sm mb-0">
-									<li v-for="page in Math.min(site.types[$route.params.tab].totalPages || 1, 25)" :key="page" class="page-item" :class="{active: page == site.types[$route.params.tab].page}"><button class="page-link" @click="site.types[$route.params.tab].page = page; load($route.params.tab)">{{ page }}</button></li>
+									<li v-for="page in Math.min(activeType.totalPages || 1, 25)" :key="page" class="page-item" :class="{active: page == activeType.page}"><button class="page-link" @click="activeType.page = page; load(routeTab)">{{ page }}</button></li>
 								</ul>
 							</div>
 						</div>
 					</div>
 
 				</div>
-				<div v-else-if="$route.params.tab && site.types[$route.params.tab]">
+				<div v-else-if="activeType">
 
 					<div class="form-row mb-3">
 						<div class="col-4 col-lg-3">
 							<input type="search" class="form-control" v-model="site.filters.search" placeholder="Search query">
 						</div>
-						<div v-for="taxonomy in site.taxonomies" :key="taxonomy.slug" v-show="taxonomy.types.includes($route.params.tab)" class="col-4 col-lg-3">
+						<div v-for="taxonomy in site.taxonomies" :key="taxonomy.slug" v-show="taxonomy.types.includes(routeTab)" class="col-4 col-lg-3">
 							<select class="form-control" v-model="site.filters[taxonomy.rest_base]">
 								<option value="">{{ taxonomy.name }}</option>
 								<option v-for="term in taxonomy.items" :key="term.id" :value="term.id">{{ term.name }} ({{ term.count }})</option>
@@ -150,7 +165,7 @@
 					</div>
 
 					<div class="row row-cols-1 row-cols-md-3 mb-3">
-						<div v-for="item in site.types[$route.params.tab].items" :key="item.id" class="col my-2">
+						<div v-for="item in activeType.items" :key="item.id" class="col my-2">
 							<div class="card h-100">
 								<a v-if="item._embedded && item._embedded['wp:featuredmedia'] && item._embedded['wp:featuredmedia'].length" :href="item.link" target="_blank" @click.prevent="openPost(item)" rel="noreferer">
 									<img :src="item._embedded['wp:featuredmedia'][0].source_url" class="card-img-top" loading="lazy" :alt="item._embedded['wp:featuredmedia'][0].alt_text">
@@ -178,26 +193,26 @@
 						</div>
 					</div>
 
-					<div v-if="site.types[$route.params.tab].state === 'idle' && !site.types[$route.params.tab].items.length" class="alert alert-info text-center">
+					<div v-if="activeType.state === 'idle' && !activeType.items.length" class="alert alert-info text-center">
 						<strong>Oops,</strong> looks there aren't any items to display. Try changing the filters
 					</div>
 
-					<div v-if="site.types[$route.params.tab].error" class="alert alert-danger">
-						{{ site.types[$route.params.tab].error }}
+					<div v-if="activeType.error" class="alert alert-danger">
+						{{ activeType.error }}
 					</div>
 
-					<div v-if="site.types[$route.params.tab].state === 'loading'" class="text-center py-3">
+					<div v-if="activeType.state === 'loading'" class="text-center py-3">
 						<div class="spinner-border spinner-border-sm" role="status"></div> Loading data
 					</div>
 
-					<div v-if="site.types[$route.params.tab].totalPages && site.types[$route.params.tab].state !== 'loading'" class="bg-white rounded p-2 my-3">
+					<div v-if="activeType.totalPages && activeType.state !== 'loading'" class="bg-white rounded p-2 my-3">
 						<div class="row align-items-center">
 							<div class="col">
-								<strong>{{ site.types[$route.params.tab].total }}</strong> items over <strong>{{ site.types[$route.params.tab].totalPages }}</strong> pages
+								<strong>{{ activeType.total }}</strong> items over <strong>{{ activeType.totalPages }}</strong> pages
 							</div>
 							<div class="col-auto">
 								<ul class="pagination pagination-sm mb-0">
-									<li v-for="page in Math.min(site.types[$route.params.tab].totalPages || 1, 25)" :key="page" class="page-item" :class="{active: page == site.types[$route.params.tab].page}"><button class="page-link" @click="site.types[$route.params.tab].page = page; load($route.params.tab)">{{ page }}</button></li>
+									<li v-for="page in Math.min(activeType.totalPages || 1, 25)" :key="page" class="page-item" :class="{active: page == activeType.page}"><button class="page-link" @click="activeType.page = page; load(routeTab)">{{ page }}</button></li>
 								</ul>
 							</div>
 						</div>
@@ -275,13 +290,11 @@
 <script>
 import { debounce } from 'vue-debounce'
 import axios from 'axios'
-import bootstrap from 'bootstrap'
+import 'bootstrap'
 import jQuery from 'jquery'
 
-bootstrap
-
 export default {
-	name: 'Home',
+	name: 'HomeView',
 	components: {
 		// HelloWorld
 	},
@@ -304,11 +317,33 @@ export default {
 			reqCancelToken: null,
 			useProxy: false,
 			currentPost: null,
+			manualRequest: null,
+			manualRequestResolver: null,
+			manualRequestRejecter: null,
+			manualResponseText: '',
+			manualResponseError: '',
 		}
 	},
+	computed: {
+		routeHost() {
+			const host = this.$route.query.host
+			return typeof host === 'string' ? host : ''
+		},
+		routeTab() {
+			const tab = this.$route.query.tab
+			return typeof tab === 'string' ? tab : ''
+		},
+		activeType() {
+			if (!this.routeTab || !this.site.types[this.routeTab]) {
+				return null
+			}
+
+			return this.site.types[this.routeTab]
+		},
+	},
 	created() {
-		if (this.$route.params.host) {
-			this.q = this.$route.params.host
+		if (this.routeHost) {
+			this.q = this.routeHost
 		}
 	},
 	mounted() {
@@ -334,17 +369,13 @@ export default {
 				return
 			}
 
-			if (url.host !== this.$route.params.host) {
-				let params = {
-					host: url.host,
-				}
-
-				// if loading a new website, go to Overview tab
-				if (this.$route.params.host === url.host) {
-					params.tab = this.$route.params.tab
-				}
-
-				this.$router.push({ name: 'Home', params })
+			if (url.host !== this.routeHost) {
+				this.$router.push({
+					name: 'Home',
+					query: {
+						host: url.host,
+					},
+				})
 			}
 
 			this.site.apiUrl = `${url.origin}/wp-json`
@@ -372,8 +403,8 @@ export default {
 
 				this.site.types = data
 
-				if (this.$route.params.tab && data[this.$route.params.tab]) {
-					this.load(this.$route.params.tab)
+				if (this.routeTab && data[this.routeTab]) {
+					this.load(this.routeTab)
 				}
 			})
 
@@ -405,7 +436,152 @@ export default {
 				url = `https://url-proxy.layered.workers.dev/?url=${encodeURIComponent(url)}`
 			}
 
-			return axios.get(url, data)
+			return axios.get(url, data).catch(error => {
+				if (!this.useProxy && !axios.isCancel(error) && (!error.response || error.response.status === 403)) {
+					return this.openManualRequest(url, path)
+				}
+
+				return Promise.reject(error)
+			})
+		},
+		getApiBaseUrl() {
+			if (this.site.apiUrl) {
+				return this.site.apiUrl
+			}
+
+			let inputUrl = (this.q || '').trim()
+			if (!inputUrl) {
+				return ''
+			}
+
+			if (!inputUrl.startsWith('http://') && !inputUrl.startsWith('https://')) {
+				inputUrl = `https://${inputUrl}`
+			}
+
+			return `${new URL(inputUrl).origin}/wp-json`
+		},
+		openManualFallback() {
+			if (this.manualRequest) {
+				return
+			}
+
+			let apiBaseUrl = ''
+			try {
+				apiBaseUrl = this.getApiBaseUrl()
+			} catch (error) {
+				this.state = 'error'
+				this.site.error = error.message
+				return
+			}
+
+			if (!apiBaseUrl) {
+				this.state = 'error'
+				this.site.error = 'Enter a WordPress URL first.'
+				return
+			}
+
+			this.state = 'loading'
+			this.site.error = ''
+			this.site.apiUrl = apiBaseUrl
+
+			this.openManualRequest(apiBaseUrl, '').then(this.wpApiLoaded, error => {
+				if (error && error.message === 'Manual response input cancelled.') {
+					this.state = 'waiting'
+					return
+				}
+
+				this.state = 'error'
+				this.site.error = error.message
+			})
+		},
+		openManualRequest(url, path) {
+			if (this.manualRequestRejecter) {
+				this.rejectManualRequest('Manual response replaced by a new request.')
+			}
+
+			this.manualRequest = {
+				url,
+				path,
+			}
+			this.manualResponseText = ''
+			this.manualResponseError = ''
+
+			return new Promise((resolve, reject) => {
+				this.manualRequestResolver = resolve
+				this.manualRequestRejecter = reject
+			})
+		},
+		normalizeManualResponse(payload) {
+			let data = payload
+			let headers = {}
+
+			if (payload && typeof payload === 'object' && !Array.isArray(payload) && Object.prototype.hasOwnProperty.call(payload, 'data')) {
+				data = payload.data
+				headers = payload.headers || {}
+			}
+
+			if (Array.isArray(data)) {
+				if (headers['x-wp-total'] == null) {
+					headers['x-wp-total'] = data.length
+				}
+				if (headers['x-wp-totalpages'] == null) {
+					headers['x-wp-totalpages'] = 1
+				}
+			}
+
+			return {
+				data,
+				headers,
+			}
+		},
+		submitManualResponse() {
+			if (!this.manualRequestResolver) {
+				return
+			}
+
+			try {
+				const payload = JSON.parse(this.manualResponseText)
+				const response = this.normalizeManualResponse(payload)
+				const resolver = this.manualRequestResolver
+
+				this.manualRequest = null
+				this.manualRequestResolver = null
+				this.manualRequestRejecter = null
+				this.manualResponseText = ''
+				this.manualResponseError = ''
+
+				resolver(response)
+			} catch (error) {
+				this.manualResponseError = error.message
+			}
+		},
+		rejectManualRequest(message) {
+			const rejecter = this.manualRequestRejecter
+			this.manualRequest = null
+			this.manualRequestResolver = null
+			this.manualRequestRejecter = null
+			this.manualResponseText = ''
+			this.manualResponseError = ''
+
+			if (rejecter) {
+				rejecter(new Error(message))
+			}
+		},
+		cancelManualResponse() {
+			this.rejectManualRequest('Manual response input cancelled.')
+		},
+		getRouteQuery(tab = '') {
+			const query = {}
+
+			if (this.routeHost) {
+				query.host = this.routeHost
+			}
+
+			if (tab) {
+				query.tab = tab
+			}
+
+			return query
 		},
 		load: debounce(function(type) {
 			if (!type) {
@@ -480,27 +656,30 @@ export default {
 			this.loadWpApi(q)
 		},
 		$route(route, routeOld) {
+			if (route.query.host && route.query.host !== this.q) {
+				this.q = route.query.host
+			}
 
 			// switch tabs: overview, posts, media, etc.
-			if (route.params.tab && route.params.tab !== routeOld.params.tab && this.site.types[route.params.tab]) {
-				this.site.types[route.params.tab].page = 1
+			if (route.query.tab && route.query.tab !== routeOld.query.tab && this.site.types[route.query.tab]) {
+				this.site.types[route.query.tab].page = 1
 
 				// reset filters
 				for (const slug in this.site.filters) {
 					this.site.filters[slug] = ''
 				}
 
-				this.load(route.params.tab)
+				this.load(route.query.tab)
 			}
 
-			if (route.params.tab && this.site.types[route.params.tab] && this.site.types[route.params.tab].page === 1) {
-				//this.load(route.params.tab)
+			if (route.query.tab && this.site.types[route.query.tab] && this.site.types[route.query.tab].page === 1) {
+				//this.load(route.query.tab)
 			}
 		},
 		'site.filters': {
 			deep: true,
 			handler() {
-				this.load(this.$route.params.tab)
+				this.load(this.routeTab)
 			}
 		}
 	}
