@@ -287,13 +287,11 @@
 <script>
 import { debounce } from 'vue-debounce'
 import axios from 'axios'
-import bootstrap from 'bootstrap'
+import 'bootstrap'
 import jQuery from 'jquery'
 
-bootstrap
-
 export default {
-	name: 'Home',
+	name: 'HomeView',
 	components: {
 		// HelloWorld
 	},
