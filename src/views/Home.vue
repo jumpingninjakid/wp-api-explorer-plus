@@ -12,6 +12,9 @@
 							<input type="checkbox" class="custom-control-input" id="api-use-proxy" v-model="useProxy">
 							<label class="custom-control-label" for="api-use-proxy">Use proxy</label>
 						</div>
+						<button type="button" class="btn btn-sm btn-outline-secondary mt-2" @click="openManualFallback">
+							Manual JSON fallback
+						</button>
 					</div>
 				</div>
 			</div>
@@ -421,11 +424,61 @@ export default {
 			}
 
 			return axios.get(url, data).catch(error => {
-				if (!this.useProxy && error.response && error.response.status === 403) {
+				if (!this.useProxy && !axios.isCancel(error) && (!error.response || error.response.status === 403)) {
 					return this.openManualRequest(url, path)
 				}
 
 				return Promise.reject(error)
+			})
+		},
+		getApiBaseUrl() {
+			if (this.site.apiUrl) {
+				return this.site.apiUrl
+			}
+
+			let inputUrl = (this.q || '').trim()
+			if (!inputUrl) {
+				return ''
+			}
+
+			if (!inputUrl.startsWith('http://') && !inputUrl.startsWith('https://')) {
+				inputUrl = `https://${inputUrl}`
+			}
+
+			return `${new URL(inputUrl).origin}/wp-json`
+		},
+		openManualFallback() {
+			if (this.manualRequest) {
+				return
+			}
+
+			let apiBaseUrl = ''
+			try {
+				apiBaseUrl = this.getApiBaseUrl()
+			} catch (error) {
+				this.state = 'error'
+				this.site.error = error.message
+				return
+			}
+
+			if (!apiBaseUrl) {
+				this.state = 'error'
+				this.site.error = 'Enter a WordPress URL first.'
+				return
+			}
+
+			this.state = 'loading'
+			this.site.error = ''
+			this.site.apiUrl = apiBaseUrl
+
+			this.openManualRequest(apiBaseUrl, '').then(this.wpApiLoaded, error => {
+				if (error && error.message === 'Manual response input cancelled.') {
+					this.state = 'waiting'
+					return
+				}
+
+				this.state = 'error'
+				this.site.error = error.message
 			})
 		},
 		openManualRequest(url, path) {
