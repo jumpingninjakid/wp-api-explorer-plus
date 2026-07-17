@@ -26,6 +26,18 @@
 					⚠️ Oops, probably this is not a WordPress site. ({{ this.site.error }})
 				</div>
 			</div>
+			<div v-if="manualRequest" class="alert alert-warning">
+				<p class="mb-2"><strong>Request blocked by CORS.</strong> Open the request in a new tab, copy the JSON response, and paste it below.</p>
+				<p class="mb-2">
+					<a :href="manualRequest.url" target="_blank" rel="noopener noreferrer">Open API request in new tab ↗</a>
+				</p>
+				<textarea v-model="manualResponseText" class="form-control" rows="8" placeholder='Paste raw JSON (or {"data": ..., "headers": ...})'></textarea>
+				<small v-if="manualResponseError" class="d-block mt-2 text-danger">{{ manualResponseError }}</small>
+				<div class="mt-2">
+					<button type="button" class="btn btn-sm btn-primary mr-2" @click="submitManualResponse">Use pasted response</button>
+					<button type="button" class="btn btn-sm btn-outline-secondary" @click="cancelManualResponse">Cancel</button>
+				</div>
+			</div>
 			<div v-if="state === 'idle'">
 
 				<ul class="nav nav-tabs mb-3">
@@ -304,6 +316,11 @@ export default {
 			reqCancelToken: null,
 			useProxy: false,
 			currentPost: null,
+			manualRequest: null,
+			manualRequestResolver: null,
+			manualRequestRejecter: null,
+			manualResponseText: '',
+			manualResponseError: '',
 		}
 	},
 	created() {
@@ -405,7 +422,89 @@ export default {
 				url = `https://url-proxy.layered.workers.dev/?url=${encodeURIComponent(url)}`
 			}
 
-			return axios.get(url, data)
+			return axios.get(url, data).catch(error => {
+				if (!this.useProxy && error.response && error.response.status === 403) {
+					return this.openManualRequest(url, path)
+				}
+
+				return Promise.reject(error)
+			})
+		},
+		openManualRequest(url, path) {
+			if (this.manualRequestRejecter) {
+				this.rejectManualRequest('Manual response replaced by a new request.')
+			}
+
+			this.manualRequest = {
+				url,
+				path,
+			}
+			this.manualResponseText = ''
+			this.manualResponseError = ''
+
+			return new Promise((resolve, reject) => {
+				this.manualRequestResolver = resolve
+				this.manualRequestRejecter = reject
+			})
+		},
+		normalizeManualResponse(payload) {
+			let data = payload
+			let headers = {}
+
+			if (payload && typeof payload === 'object' && !Array.isArray(payload) && Object.prototype.hasOwnProperty.call(payload, 'data')) {
+				data = payload.data
+				headers = payload.headers || {}
+			}
+
+			if (Array.isArray(data)) {
+				if (headers['x-wp-total'] == null) {
+					headers['x-wp-total'] = data.length
+				}
+				if (headers['x-wp-totalpages'] == null) {
+					headers['x-wp-totalpages'] = 1
+				}
+			}
+
+			return {
+				data,
+				headers,
+			}
+		},
+		submitManualResponse() {
+			if (!this.manualRequestResolver) {
+				return
+			}
+
+			try {
+				const payload = JSON.parse(this.manualResponseText)
+				const response = this.normalizeManualResponse(payload)
+				const resolver = this.manualRequestResolver
+
+				this.manualRequest = null
+				this.manualRequestResolver = null
+				this.manualRequestRejecter = null
+				this.manualResponseText = ''
+				this.manualResponseError = ''
+
+				resolver(response)
+			} catch (error) {
+				this.manualResponseError = error.message
+			}
+		},
+		rejectManualRequest(message) {
+			const rejecter = this.manualRequestRejecter
+			this.manualRequest = null
+			this.manualRequestResolver = null
+			this.manualRequestRejecter = null
+			this.manualResponseText = ''
+			this.manualResponseError = ''
+
+			if (rejecter) {
+				rejecter(new Error(message))
+			}
+		},
+		cancelManualResponse() {
+			this.rejectManualRequest('Manual response input cancelled.')
 		},
 		load: debounce(function(type) {
 			if (!type) {
