@@ -45,22 +45,22 @@
 
 				<ul class="nav nav-tabs mb-3">
 					<li class="nav-item">
-						<router-link :to="`/${$route.params.host}`" class="nav-link" :class="{active: !$route.params.tab}">Overview</router-link>
+						<router-link :to="{ name: 'Home', query: getRouteQuery() }" class="nav-link" :class="{active: !routeTab}">Overview</router-link>
 					</li>
 					<!--
 					<li class="nav-item">
-						<router-link :to="`/${$route.params.host}/taxonomies`" class="nav-link" :class="{active: $route.params.tab === 'taxonomies'}">Taxonomies</router-link>
+						<router-link :to="{ name: 'Home', query: getRouteQuery('taxonomies') }" class="nav-link" :class="{active: routeTab === 'taxonomies'}">Taxonomies</router-link>
 					</li>
 					-->
 					<li v-for="type in site.types" :key="type.slug" class="nav-item">
-						<router-link :to="`/${$route.params.host}/${type.slug}`" class="nav-link" :class="{active: $route.params.tab === type.slug}">{{ type.name }} <span v-if="type.totalTotal" class="badge badge-light-secondary badge-pill">{{ type.totalTotal }}</span></router-link>
+						<router-link :to="{ name: 'Home', query: getRouteQuery(type.slug) }" class="nav-link" :class="{active: routeTab === type.slug}">{{ type.name }} <span v-if="type.totalTotal" class="badge badge-light-secondary badge-pill">{{ type.totalTotal }}</span></router-link>
 					</li>
 				</ul>
 
-				<div v-if="$route.params.tab === 'taxonomies'">
+				<div v-if="routeTab === 'taxonomies'">
 					<pre>{{ site.taxonomies }}</pre>
 				</div>
-				<div v-else-if="$route.params.tab === 'attachment' && site.types.attachment">
+				<div v-else-if="routeTab === 'attachment' && site.types.attachment">
 					
 					<div class="form-row mb-3">
 						<div class="col-4 col-lg-3">
@@ -124,39 +124,39 @@
 						</div>
 					</div>
 
-					<div v-if="site.types[$route.params.tab].state === 'idle' && !site.types[$route.params.tab].items.length" class="alert alert-info text-center">
+					<div v-if="activeType.state === 'idle' && !activeType.items.length" class="alert alert-info text-center">
 						<strong>Oops,</strong> looks there aren't any items to display. Try changing the filters
 					</div>
 
-					<div v-if="site.types[$route.params.tab].error" class="alert alert-danger">
-						{{ site.types[$route.params.tab].error }}
+					<div v-if="activeType.error" class="alert alert-danger">
+						{{ activeType.error }}
 					</div>
 
-					<div v-if="site.types[$route.params.tab].state === 'loading'" class="text-center py-3">
+					<div v-if="activeType.state === 'loading'" class="text-center py-3">
 						<div class="spinner-border spinner-border-sm" role="status"></div> Loading media files
 					</div>
 
-					<div v-if="site.types[$route.params.tab].totalPages && site.types[$route.params.tab].state !== 'loading'" class="bg-white rounded p-2 my-3">
+					<div v-if="activeType.totalPages && activeType.state !== 'loading'" class="bg-white rounded p-2 my-3">
 						<div class="row align-items-center">
 							<div class="col">
-								<strong>{{ site.types[$route.params.tab].total }}</strong> items over <strong>{{ site.types[$route.params.tab].totalPages }}</strong> pages
+								<strong>{{ activeType.total }}</strong> items over <strong>{{ activeType.totalPages }}</strong> pages
 							</div>
 							<div class="col-auto">
 								<ul class="pagination pagination-sm mb-0">
-									<li v-for="page in Math.min(site.types[$route.params.tab].totalPages || 1, 25)" :key="page" class="page-item" :class="{active: page == site.types[$route.params.tab].page}"><button class="page-link" @click="site.types[$route.params.tab].page = page; load($route.params.tab)">{{ page }}</button></li>
+									<li v-for="page in Math.min(activeType.totalPages || 1, 25)" :key="page" class="page-item" :class="{active: page == activeType.page}"><button class="page-link" @click="activeType.page = page; load(routeTab)">{{ page }}</button></li>
 								</ul>
 							</div>
 						</div>
 					</div>
 
 				</div>
-				<div v-else-if="$route.params.tab && site.types[$route.params.tab]">
+				<div v-else-if="activeType">
 
 					<div class="form-row mb-3">
 						<div class="col-4 col-lg-3">
 							<input type="search" class="form-control" v-model="site.filters.search" placeholder="Search query">
 						</div>
-						<div v-for="taxonomy in site.taxonomies" :key="taxonomy.slug" v-show="taxonomy.types.includes($route.params.tab)" class="col-4 col-lg-3">
+						<div v-for="taxonomy in site.taxonomies" :key="taxonomy.slug" v-show="taxonomy.types.includes(routeTab)" class="col-4 col-lg-3">
 							<select class="form-control" v-model="site.filters[taxonomy.rest_base]">
 								<option value="">{{ taxonomy.name }}</option>
 								<option v-for="term in taxonomy.items" :key="term.id" :value="term.id">{{ term.name }} ({{ term.count }})</option>
@@ -165,7 +165,7 @@
 					</div>
 
 					<div class="row row-cols-1 row-cols-md-3 mb-3">
-						<div v-for="item in site.types[$route.params.tab].items" :key="item.id" class="col my-2">
+						<div v-for="item in activeType.items" :key="item.id" class="col my-2">
 							<div class="card h-100">
 								<a v-if="item._embedded && item._embedded['wp:featuredmedia'] && item._embedded['wp:featuredmedia'].length" :href="item.link" target="_blank" @click.prevent="openPost(item)" rel="noreferer">
 									<img :src="item._embedded['wp:featuredmedia'][0].source_url" class="card-img-top" loading="lazy" :alt="item._embedded['wp:featuredmedia'][0].alt_text">
@@ -193,26 +193,26 @@
 						</div>
 					</div>
 
-					<div v-if="site.types[$route.params.tab].state === 'idle' && !site.types[$route.params.tab].items.length" class="alert alert-info text-center">
+					<div v-if="activeType.state === 'idle' && !activeType.items.length" class="alert alert-info text-center">
 						<strong>Oops,</strong> looks there aren't any items to display. Try changing the filters
 					</div>
 
-					<div v-if="site.types[$route.params.tab].error" class="alert alert-danger">
-						{{ site.types[$route.params.tab].error }}
+					<div v-if="activeType.error" class="alert alert-danger">
+						{{ activeType.error }}
 					</div>
 
-					<div v-if="site.types[$route.params.tab].state === 'loading'" class="text-center py-3">
+					<div v-if="activeType.state === 'loading'" class="text-center py-3">
 						<div class="spinner-border spinner-border-sm" role="status"></div> Loading data
 					</div>
 
-					<div v-if="site.types[$route.params.tab].totalPages && site.types[$route.params.tab].state !== 'loading'" class="bg-white rounded p-2 my-3">
+					<div v-if="activeType.totalPages && activeType.state !== 'loading'" class="bg-white rounded p-2 my-3">
 						<div class="row align-items-center">
 							<div class="col">
-								<strong>{{ site.types[$route.params.tab].total }}</strong> items over <strong>{{ site.types[$route.params.tab].totalPages }}</strong> pages
+								<strong>{{ activeType.total }}</strong> items over <strong>{{ activeType.totalPages }}</strong> pages
 							</div>
 							<div class="col-auto">
 								<ul class="pagination pagination-sm mb-0">
-									<li v-for="page in Math.min(site.types[$route.params.tab].totalPages || 1, 25)" :key="page" class="page-item" :class="{active: page == site.types[$route.params.tab].page}"><button class="page-link" @click="site.types[$route.params.tab].page = page; load($route.params.tab)">{{ page }}</button></li>
+									<li v-for="page in Math.min(activeType.totalPages || 1, 25)" :key="page" class="page-item" :class="{active: page == activeType.page}"><button class="page-link" @click="activeType.page = page; load(routeTab)">{{ page }}</button></li>
 								</ul>
 							</div>
 						</div>
@@ -324,9 +324,26 @@ export default {
 			manualResponseError: '',
 		}
 	},
+	computed: {
+		routeHost() {
+			const host = this.$route.query.host
+			return typeof host === 'string' ? host : ''
+		},
+		routeTab() {
+			const tab = this.$route.query.tab
+			return typeof tab === 'string' ? tab : ''
+		},
+		activeType() {
+			if (!this.routeTab || !this.site.types[this.routeTab]) {
+				return null
+			}
+
+			return this.site.types[this.routeTab]
+		},
+	},
 	created() {
-		if (this.$route.params.host) {
-			this.q = this.$route.params.host
+		if (this.routeHost) {
+			this.q = this.routeHost
 		}
 	},
 	mounted() {
@@ -352,17 +369,13 @@ export default {
 				return
 			}
 
-			if (url.host !== this.$route.params.host) {
-				let params = {
-					host: url.host,
-				}
-
-				// if loading a new website, go to Overview tab
-				if (this.$route.params.host === url.host) {
-					params.tab = this.$route.params.tab
-				}
-
-				this.$router.push({ name: 'Home', params })
+			if (url.host !== this.routeHost) {
+				this.$router.push({
+					name: 'Home',
+					query: {
+						host: url.host,
+					},
+				})
 			}
 
 			this.site.apiUrl = `${url.origin}/wp-json`
@@ -390,8 +403,8 @@ export default {
 
 				this.site.types = data
 
-				if (this.$route.params.tab && data[this.$route.params.tab]) {
-					this.load(this.$route.params.tab)
+				if (this.routeTab && data[this.routeTab]) {
+					this.load(this.routeTab)
 				}
 			})
 
@@ -557,6 +570,19 @@ export default {
 		cancelManualResponse() {
 			this.rejectManualRequest('Manual response input cancelled.')
 		},
+		getRouteQuery(tab = '') {
+			const query = {}
+
+			if (this.routeHost) {
+				query.host = this.routeHost
+			}
+
+			if (tab) {
+				query.tab = tab
+			}
+
+			return query
+		},
 		load: debounce(function(type) {
 			if (!type) {
 				return
@@ -630,27 +656,30 @@ export default {
 			this.loadWpApi(q)
 		},
 		$route(route, routeOld) {
+			if (route.query.host && route.query.host !== this.q) {
+				this.q = route.query.host
+			}
 
 			// switch tabs: overview, posts, media, etc.
-			if (route.params.tab && route.params.tab !== routeOld.params.tab && this.site.types[route.params.tab]) {
-				this.site.types[route.params.tab].page = 1
+			if (route.query.tab && route.query.tab !== routeOld.query.tab && this.site.types[route.query.tab]) {
+				this.site.types[route.query.tab].page = 1
 
 				// reset filters
 				for (const slug in this.site.filters) {
 					this.site.filters[slug] = ''
 				}
 
-				this.load(route.params.tab)
+				this.load(route.query.tab)
 			}
 
-			if (route.params.tab && this.site.types[route.params.tab] && this.site.types[route.params.tab].page === 1) {
-				//this.load(route.params.tab)
+			if (route.query.tab && this.site.types[route.query.tab] && this.site.types[route.query.tab].page === 1) {
+				//this.load(route.query.tab)
 			}
 		},
 		'site.filters': {
 			deep: true,
 			handler() {
-				this.load(this.$route.params.tab)
+				this.load(this.routeTab)
 			}
 		}
 	}
